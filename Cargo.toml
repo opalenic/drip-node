@@ -1,5 +1,5 @@
 [package]
-name = "rpi_client_temp"
+name = "drip-node"
 version = "0.1.0"
 edition = "2021"
 
@@ -10,11 +10,13 @@ anyhow = "1"
 chrono = "0.4"
 diesel = { version = "2", features = ["chrono", "numeric", "sqlite"] }
 dotenv = "0.15"
+futures-util = "0.3"
 i2cdev = "0.5"
 lazy_static = "1"
 log = "0.4"
 pretty_env_logger = "0.4"
-tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "time"] }
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "sync", "time"] }
+tokio-tungstenite = "0.17"
 
 [features]
 enviro_phat_v1 = []

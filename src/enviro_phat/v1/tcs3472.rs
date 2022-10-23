@@ -17,6 +17,7 @@ pub enum Gain {
     Mult60X = 0b11,
 }
 
+#[derive(Debug)]
 pub struct Tcs3472 {
     comm_channel: Arc<Mutex<LinuxI2CBus>>,
 }

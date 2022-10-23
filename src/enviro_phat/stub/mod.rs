@@ -5,6 +5,7 @@ use std::path::Path;
 use super::{LightLevel, Pressure, Temperature};
 use super::{MeasureEnvironment, Measurement};
 
+#[derive(Debug)]
 pub struct EnviroPHatStub(());
 
 impl EnviroPHatStub {

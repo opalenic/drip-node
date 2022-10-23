@@ -1,4 +1,10 @@
 use anyhow::Result;
+use diesel::prelude::*;
+use diesel::SqliteConnection;
+
+use crate::db::{self, InsertableMeasurement};
+
+use std::sync::{Arc, Mutex};
 
 #[cfg(feature = "enviro_phat_v1")]
 mod v1;
@@ -26,4 +32,26 @@ pub struct Measurement {
 
 pub trait MeasureEnvironment {
     fn measure(&self) -> Result<Measurement>;
+}
+
+pub fn create_measurement_task(
+    enviro_phat: Arc<EnviroPHat>,
+    db_conn: Arc<Mutex<SqliteConnection>>,
+) -> impl FnOnce() -> Result<()> {
+    move || {
+        log::trace!("Performing measurement on {enviro_phat:?}.");
+        let measurement = enviro_phat.measure()?;
+        log::trace!("Measured values: {measurement:?}");
+
+        Ok({
+            use db::schema::measurements::dsl::*;
+            let mut locked_db_conn = db_conn.lock().unwrap();
+
+            log::trace!("Inserting measurement into DB.");
+            let insertable = InsertableMeasurement::from(measurement);
+            diesel::insert_into(measurements)
+                .values(&insertable)
+                .execute(&mut *locked_db_conn)?;
+        })
+    }
 }

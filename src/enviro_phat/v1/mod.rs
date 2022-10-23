@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex};
 use super::{LightLevel, Pressure, Temperature};
 use super::{MeasureEnvironment, Measurement};
 
+#[derive(Debug)]
 pub struct EnviroPHatV1 {
     bmp: Bmp280,
     tcs: Tcs3472,

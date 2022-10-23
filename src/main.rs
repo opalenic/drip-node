@@ -1,16 +1,26 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use lazy_static::lazy_static;
 use tokio::{select, task, time};
+use tokio_tungstenite;
 
-use std::{path::PathBuf, sync::Arc, time::Duration};
+
+use futures_util::{StreamExt, SinkExt};
+
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 mod enviro_phat;
-use enviro_phat::{EnviroPHat, MeasureEnvironment};
+use enviro_phat::{create_measurement_task, EnviroPHat};
 
 use diesel::prelude::*;
 
 mod db;
-use db::{InsertableMeasurement, Measurement};
+
+mod websocket_conn;
+use websocket_conn::WebsocketConnection;
 
 lazy_static! {
     static ref CONFIG: GlobalConfig = GlobalConfig::from_env().unwrap();
@@ -29,13 +39,23 @@ impl GlobalConfig {
     const DB_FILE_PATH_ENV_VAR: &'static str = "DATABASE_URL";
 
     fn from_env() -> Result<Self> {
-        dotenv::dotenv()?;
-        let i2c_bus_path = PathBuf::from(dotenv::var(Self::I2C_DEV_PATH_ENV_VAR)?);
+        dotenv::dotenv().map_err(|e| anyhow!(".env file load: {e}"))?;
+        let i2c_bus_path = PathBuf::from(
+            dotenv::var(Self::I2C_DEV_PATH_ENV_VAR)
+                .map_err(|e| anyhow!("{} {}", Self::I2C_DEV_PATH_ENV_VAR, e))?,
+        );
 
-        let measurement_period_secs = dotenv::var(Self::MEASUREMENT_PERIOD_ENV_VAR)?.parse()?;
+        let measurement_period_secs = dotenv::var(Self::MEASUREMENT_PERIOD_ENV_VAR)
+            .map_err(|e| anyhow!("{} {}", Self::MEASUREMENT_PERIOD_ENV_VAR, e))?
+            .parse()
+            .map_err(|e| anyhow!("{} {}", Self::MEASUREMENT_PERIOD_ENV_VAR, e))?;
+
         let measurement_period = Duration::from_secs(measurement_period_secs);
 
-        let db_path = PathBuf::from(dotenv::var(Self::DB_FILE_PATH_ENV_VAR)?);
+        let db_path = PathBuf::from(
+            dotenv::var(Self::DB_FILE_PATH_ENV_VAR)
+                .map_err(|e| anyhow!("{} {}", Self::DB_FILE_PATH_ENV_VAR, e))?,
+        );
 
         Ok(Self {
             i2c_bus_path,
@@ -48,40 +68,42 @@ impl GlobalConfig {
 #[tokio::main]
 async fn main() {
     pretty_env_logger::init();
-    log::info!("Hello, world!");
 
     let mut measurement_timer = time::interval(CONFIG.measurement_period);
+
+    let db_conn = Arc::new(Mutex::new(
+        SqliteConnection::establish(CONFIG.db_path.to_str().unwrap()).unwrap(),
+    ));
     let enviro_phat = Arc::new(EnviroPHat::new(&CONFIG.i2c_bus_path).unwrap());
 
-    let mut db_conn = SqliteConnection::establish(CONFIG.db_path.to_str().unwrap()).unwrap();
+    let w = WebsocketConnection::new("ws://127.0.0.1:8080/ws").await.unwrap();
 
+
+    let (ws, res) = tokio_tungstenite::connect_async("ws://127.0.0.1:8080/ws").await.unwrap();
+
+    log::trace!("{res:?}");
+
+    let (mut ws_tx, ws_rx) = ws.split();
+    let mut ws_rx = ws_rx.fuse();
+    let mut i = 0;
     loop {
         select! {
             _ = measurement_timer.tick() => {
-                log::info!("Measuring");
+                let res = task::spawn_blocking(
+                    create_measurement_task(enviro_phat.clone(), db_conn.clone())
+                )
+                .await;
 
-                let phat = enviro_phat.clone();
+                if let Err(e) = res {
+                    log::error!("Encountered error while measuring and persinting data to the DB: {e}");
+                }
+                i += 1;
+                ws_tx.send(format!("Boom {i}").into()).await.unwrap();
+                log::error!("Future done {i}");
 
-                let measurement_task = task::spawn_blocking(move || {
-                    phat.measure()
-                });
-
-                let measurement_res = measurement_task.await.unwrap().unwrap();
-                log::info!("Measurement result: {measurement_res:?}");
-
-                let measurements = {
-                    use db::schema::measurements::dsl::*;
-
-                    let insertable = InsertableMeasurement::from(measurement_res);
-                    diesel::insert_into(measurements)
-                        .values(&insertable)
-                        .execute(&mut db_conn)
-                          .unwrap();
-
-                    measurements.load::<Measurement>(&mut db_conn).unwrap()
-                };
-
-                log::info!("Measurements already in DB: {measurements:?}");
+            },
+            Some(something) = ws_rx.next() => {
+                log::error!("Got something {something:?}");
             }
         }
     }

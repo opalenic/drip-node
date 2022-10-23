@@ -67,6 +67,7 @@ struct CalibrationData {
     dig_p9: i16,
 }
 
+#[derive(Debug)]
 pub struct Bmp280 {
     comm_path: Arc<Mutex<LinuxI2CBus>>,
     calib: CalibrationData,
@@ -265,8 +266,11 @@ impl Bmp280 {
         temp_oversampling: Oversampling,
         mode: Mode,
     ) -> Result<()> {
-        log::debug!("Reconfiguring BMP280: standby_time {standby_time:?}, iir_coef {iir_coef:?},\
-                     press_oversampling {press_oversampling:?}, temp_oversampling {temp_oversampling:?}, mode {mode:?}");
+        log::debug!(
+            "Reconfiguring BMP280: standby_time {standby_time:?}, iir_coef \
+             {iir_coef:?},press_oversampling {press_oversampling:?}, temp_oversampling \
+             {temp_oversampling:?}, mode {mode:?}"
+        );
 
         let ctrl_meas_reg =
             ((temp_oversampling as u8) << 5) | ((press_oversampling as u8) << 2) | (mode as u8);
