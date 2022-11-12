@@ -1,10 +1,10 @@
 use anyhow::{anyhow, Result};
 use lazy_static::lazy_static;
+use serde::{Serialize, Deserialize};
 use tokio::{select, task, time};
 use tokio_tungstenite;
 
-
-use futures_util::{StreamExt, SinkExt};
+use futures_util::{SinkExt, StreamExt};
 
 use std::{
     path::PathBuf,
@@ -65,6 +65,17 @@ impl GlobalConfig {
     }
 }
 
+
+#[derive(Debug, Serialize)]
+enum OutgoingMsg {
+    TypeA(u16),
+    TypeB(u32),
+}
+
+#[derive(Debug, Deserialize)]
+struct IncomingMsg(u8);
+
+
 #[tokio::main]
 async fn main() {
     pretty_env_logger::init();
@@ -76,12 +87,24 @@ async fn main() {
     ));
     let enviro_phat = Arc::new(EnviroPHat::new(&CONFIG.i2c_bus_path).unwrap());
 
-    let w = WebsocketConnection::new("ws://127.0.0.1:8080/ws").await.unwrap();
+    {
+        let w: WebsocketConnection<OutgoingMsg, IncomingMsg> = WebsocketConnection::new("ws://127.0.0.1:8080/ws")
+            .await
+            .unwrap();
+
+        log::trace!("{w:?}");
+
+        for i in 0..10 {
+            w.send(OutgoingMsg::TypeA(i));
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+
+        tokio::time::sleep(Duration::from_secs(100)).await;
+        log::error!("Closing websocket connection")
+    }
 
 
-    let (ws, res) = tokio_tungstenite::connect_async("ws://127.0.0.1:8080/ws").await.unwrap();
-
-    log::trace!("{res:?}");
+    let (ws, _) = tokio_tungstenite::connect_async("ws://127.0.0.1:8080/ws").await.unwrap();
 
     let (mut ws_tx, ws_rx) = ws.split();
     let mut ws_rx = ws_rx.fuse();

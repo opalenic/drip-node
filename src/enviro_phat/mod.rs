@@ -6,14 +6,14 @@ use crate::db::{self, InsertableMeasurement};
 
 use std::sync::{Arc, Mutex};
 
-#[cfg(feature = "enviro_phat_v1")]
+#[cfg(feature = "enviro-phat-v1")]
 mod v1;
-#[cfg(feature = "enviro_phat_v1")]
+#[cfg(feature = "enviro-phat-v1")]
 pub use v1::EnviroPHatV1 as EnviroPHat;
 
-#[cfg(feature = "enviro_phat_stub")]
+#[cfg(feature = "enviro-phat-stub")]
 mod stub;
-#[cfg(feature = "enviro_phat_stub")]
+#[cfg(feature = "enviro-phat-stub")]
 pub use stub::EnviroPHatStub as EnviroPHat;
 
 #[derive(Debug, PartialEq, PartialOrd)]
